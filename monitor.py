@@ -12,6 +12,7 @@ import json
 import os
 import sys
 import time
+import random
 import smtplib
 import logging
 from datetime import datetime, timedelta
@@ -109,6 +110,8 @@ def fetch_stock_data(stock_list):
     1. 东方财富（主力接口）
     2. 新浪财经（备用接口）
     3. 腾讯财经（兜底接口）
+
+    反爬措施：打乱请求顺序、随机延迟、单接口失败自动切换
     """
     results = {}
     errors = []
@@ -120,7 +123,11 @@ def fetch_stock_data(stock_list):
         ("腾讯财经", fetch_from_tencent),
     ]
 
-    for stock in stock_list:
+    # 打乱股票顺序，避免固定顺序被识别为爬虫
+    shuffled = stock_list[:]
+    random.shuffle(shuffled)
+
+    for idx, stock in enumerate(shuffled):
         code = stock["code"]
         name = stock["name"]
         market = determine_market(code)
@@ -129,7 +136,7 @@ def fetch_stock_data(stock_list):
         data = None
         for source_name, fetch_func in sources:
             try:
-                logger.info(f"获取 {name}({code}) 数据，使用 {source_name}...")
+                logger.info(f"[{idx+1}/{len(shuffled)}] 获取 {name}({code})，使用 {source_name}...")
                 data = fetch_func(full_code, code, name)
                 if data is not None and not data.empty:
                     logger.info(f"  ✓ {source_name} 获取成功")
@@ -144,6 +151,11 @@ def fetch_stock_data(stock_list):
         else:
             errors.append(name)
             logger.error(f"所有接口均无法获取 {name}({code}) 的数据")
+
+        # 随机延迟 1~3 秒，防止请求过于频繁被屏蔽
+        delay = random.uniform(1.0, 3.0)
+        logger.debug(f"  等待 {delay:.1f} 秒...")
+        time.sleep(delay)
 
     return results, errors
 
