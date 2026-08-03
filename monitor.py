@@ -371,8 +371,8 @@ def send_email(results, errors, failed_fetch, preview=False):
         return False
 
     msg = MIMEMultipart("alternative")
-    msg["From"] = Header(f"股票监控机器人 <{QQ_EMAIL}>", "utf-8")
-    msg["To"] = Header(TO_EMAIL, "utf-8")
+    msg["From"] = QQ_EMAIL
+    msg["To"] = TO_EMAIL
     msg["Subject"] = Header(subject, "utf-8")
     msg.attach(MIMEText(html_body, "html", "utf-8"))
 
@@ -517,8 +517,8 @@ def _send_error_email(error_msg):
         return
     today_str = datetime.now().strftime("%Y-%m-%d")
     msg = MIMEMultipart()
-    msg["From"] = Header(f"股票监控机器人 <{QQ_EMAIL}>", "utf-8")
-    msg["To"] = Header(TO_EMAIL, "utf-8")
+    msg["From"] = QQ_EMAIL
+    msg["To"] = TO_EMAIL
     msg["Subject"] = Header(f"❌ 股票监控失败 {today_str}", "utf-8")
     msg.attach(MIMEText(f"<pre>{error_msg}</pre>", "html", "utf-8"))
     try:
