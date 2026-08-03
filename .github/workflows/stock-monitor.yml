@@ -1,0 +1,46 @@
+name: 股票监控日报
+
+on:
+  schedule:
+    # 北京时间 20:00 = UTC 12:00，周一到周五
+    - cron: '0 12 * * 1-5'
+  # 允许手动触发（方便测试）
+  workflow_dispatch:
+
+jobs:
+  stock-monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: 'pip'
+          cache-dependency-path: 'requirements.txt'
+
+      - name: 安装依赖
+        run: |
+          pip install -r requirements.txt
+
+      - name: 运行股票监控
+        env:
+          QQ_EMAIL: ${{ secrets.QQ_EMAIL }}
+          QQ_AUTH_CODE: ${{ secrets.QQ_AUTH_CODE }}
+          TO_EMAIL: ${{ secrets.TO_EMAIL }}
+          SERVERCHAN_SENDKEY: ${{ secrets.SERVERCHAN_SENDKEY }}
+        run: |
+          python monitor.py
+
+      - name: 上传日志（调试用）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: monitor-log
+          path: |
+            *.log
+          retention-days: 7
