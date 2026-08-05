@@ -3,7 +3,7 @@
 股票监控脚本
 - 监控 stock_list.json 中的股票
 - 计算 MA120 均线，判断股价与均线的差距
-- 低于均线 10% 标记为重点关注
+- 低于均线 12% 标记为重点关注，高于均线 10% 标记为卖出信号
 - 通过 QQ 邮箱 SMTP 发送 HTML 报告
 - 通过 Server酱 推送到微信
 """
@@ -66,8 +66,10 @@ SERVERCHAN_SENDKEY = os.environ.get("SERVERCHAN_SENDKEY", "")
 
 # 均线周期
 MA_PERIOD = 120
-# 重点警报阈值（低于均线百分比）
-ALERT_THRESHOLD = 10
+# 重点关注阈值（低于均线百分比）
+ALERT_THRESHOLD = 12
+# 卖出信号阈值（高于均线百分比）
+SELL_THRESHOLD = 10
 
 # ─────────────────────── 工具函数 ───────────────────────
 
@@ -239,7 +241,16 @@ def analyze_stocks(stock_data):
             continue
 
         gap_pct = (price - ma120) / ma120 * 100
-        is_alert = gap_pct <= -ALERT_THRESHOLD
+
+        if gap_pct <= -ALERT_THRESHOLD:
+            status = "⚠️ 重点关注"
+            is_alert = True
+        elif gap_pct >= SELL_THRESHOLD:
+            status = "🔴 卖出"
+            is_alert = True
+        else:
+            status = "正常"
+            is_alert = False
 
         results.append({
             "name": name,
@@ -263,8 +274,19 @@ def send_email(results, errors, failed_fetch, preview=False):
     """发送 HTML 格式的邮件报告；preview=True 时保存为本地文件"""
     today_str = datetime.now().strftime("%Y-%m-%d")
     alert_count = sum(1 for r in results if r["is_alert"])
+    focus_count = sum(1 for r in results if r["status"] == "⚠️ 重点关注")
+    sell_count = sum(1 for r in results if r["status"] == "🔴 卖出")
 
-    subject = f"📊 股票监控日报 {today_str} {'（⚠️ {} 只重点关注）'.format(alert_count) if alert_count else ''}"
+    if focus_count and sell_count:
+        subject_tag = f"（⚠️ 重点关注 {focus_count} | 🔴 卖出 {sell_count}）"
+    elif focus_count:
+        subject_tag = f"（⚠️ {focus_count} 只重点关注）"
+    elif sell_count:
+        subject_tag = f"（🔴 {sell_count} 只卖出信号）"
+    else:
+        subject_tag = ""
+
+    subject = f"📊 股票监控日报 {today_str} {subject_tag}"
 
     # 构建 HTML 表格
     table_rows = ""
@@ -342,9 +364,10 @@ def send_email(results, errors, failed_fetch, preview=False):
         <h1>📊 股票监控日报</h1>
         <p class="summary">日期：<strong>{today_str}</strong> &nbsp;|&nbsp;
            共监控 <strong>{len(results)}</strong> 只股票 &nbsp;|&nbsp;
-           重点关注 <strong style="color: #dc3545;">{alert_count}</strong> 只</p>
+           重点关注 <strong style="color: #dc3545;">{focus_count}</strong> 只 &nbsp;|&nbsp;
+           卖出信号 <strong style="color: #dc3545;">{sell_count}</strong> 只</p>
 
-        {f'<div class="alert-box">⚠️ 今日有 <strong>{alert_count}</strong> 只股票低于 120 日均线 10% 以上，请重点关注！</div>' if alert_count else '<div class="alert-box" style="background-color: #d4edda; border-color: #28a745;">✅ 今日无重点警报股票</div>'}
+        {f'<div class="alert-box">⚠️ 今日有 <strong>{focus_count}</strong> 只股票低于 120 日均线 {ALERT_THRESHOLD}% 以上（重点关注），<strong>{sell_count}</strong> 只高于均线 {SELL_THRESHOLD}% 以上（卖出信号）！</div>' if alert_count else '<div class="alert-box" style="background-color: #d4edda; border-color: #28a745;">✅ 今日无重点警报股票</div>'}
 
         <h2>📋 全部股票监控详情</h2>
         <table>
@@ -364,7 +387,8 @@ def send_email(results, errors, failed_fetch, preview=False):
 
         <div class="footer">
             <p>说明：差距 = (收盘价 - MA120) / MA120 × 100%</p>
-            <p>⚠️ 重点关注：差距 ≤ -10%（股价低于 120 日均线 10% 以上）</p>
+            <p>⚠️ 重点关注：差距 ≤ -{ALERT_THRESHOLD}%（股价低于 120 日均线 {ALERT_THRESHOLD}% 以上）</p>
+            <p>🔴 卖出信号：差距 ≥ +{SELL_THRESHOLD}%（股价高于 120 日均线 {SELL_THRESHOLD}% 以上）</p>
             <p>本邮件由 GitHub Actions 自动发送 | 股票数据来自公开接口，仅供参考，不构成投资建议</p>
         </div>
     </body>
@@ -410,8 +434,17 @@ def send_wechat_push(results, errors, failed_fetch):
 
     today_str = datetime.now().strftime("%Y-%m-%d")
     alert_count = sum(1 for r in results if r["is_alert"])
+    focus_count = sum(1 for r in results if r["status"] == "⚠️ 重点关注")
+    sell_count = sum(1 for r in results if r["status"] == "🔴 卖出")
 
-    title = f"📊 股票监控 {today_str} | 重点警报 {alert_count} 只"
+    if focus_count and sell_count:
+        title = f"📊 股票监控 {today_str} | 重点关注 {focus_count} | 卖出 {sell_count}"
+    elif focus_count:
+        title = f"📊 股票监控 {today_str} | 重点关注 {focus_count} 只"
+    elif sell_count:
+        title = f"📊 股票监控 {today_str} | 卖出 {sell_count} 只"
+    else:
+        title = f"📊 股票监控 {today_str}"
 
     lines = []
     lines.append(f"📅 {today_str}　　共监控 {len(results)} 只")
@@ -421,28 +454,36 @@ def send_wechat_push(results, errors, failed_fetch):
     valid = [r for r in results if isinstance(r["gap"], (int, float))]
     valid.sort(key=lambda r: r["gap"])
 
-    # 第一档：低于均线 10% 以上
-    tier1 = [r for r in valid if r["gap"] <= -10]
-    # 第二档：低于均线 0~10%
-    tier2 = [r for r in valid if -10 < r["gap"] < 0]
-    # 第三档：站上均线
-    tier3 = [r for r in valid if r["gap"] >= 0]
+    # 第一档：低于均线 12% 以上
+    tier1 = [r for r in valid if r["gap"] <= -ALERT_THRESHOLD]
+    # 第二档：低于均线 0~12%
+    tier2 = [r for r in valid if -ALERT_THRESHOLD < r["gap"] < 0]
+    # 第三档：站上均线 0~10%
+    tier3 = [r for r in valid if 0 <= r["gap"] < SELL_THRESHOLD]
+    # 第四档：站上均线 10% 以上
+    tier4 = [r for r in valid if r["gap"] >= SELL_THRESHOLD]
 
     if tier1:
-        lines.append(f"🔴 低于均线 10%+（{len(tier1)}只）")
+        lines.append(f"🔴 低于均线 {ALERT_THRESHOLD}%+（{len(tier1)}只）")
         for r in tier1:
             lines.append(f"{r['name']}　{r['gap']:+.2f}%")
         lines.append("")
 
     if tier2:
-        lines.append(f"🟡 低于均线 0~10%（{len(tier2)}只）")
+        lines.append(f"🟡 低于均线 0~{ALERT_THRESHOLD}%（{len(tier2)}只）")
         for r in tier2:
             lines.append(f"{r['name']}　{r['gap']:+.2f}%")
         lines.append("")
 
     if tier3:
-        lines.append(f"🟢 站上均线（{len(tier3)}只）")
+        lines.append(f"🟢 站上均线 0~{SELL_THRESHOLD}%（{len(tier3)}只）")
         for r in tier3:
+            lines.append(f"{r['name']}　+{r['gap']:.2f}%")
+        lines.append("")
+
+    if tier4:
+        lines.append(f"🔴 站上均线 {SELL_THRESHOLD}%+（{len(tier4)}只）")
+        for r in tier4:
             lines.append(f"{r['name']}　+{r['gap']:.2f}%")
         lines.append("")
 
@@ -520,7 +561,9 @@ def main():
         )
 
     alert_count = sum(1 for r in results if r["is_alert"])
-    logger.info(f"监控完成：重点关注 {alert_count} 只")
+    focus_count = sum(1 for r in results if r["status"] == "⚠️ 重点关注")
+    sell_count = sum(1 for r in results if r["status"] == "🔴 卖出")
+    logger.info(f"监控完成：重点关注 {focus_count} 只，卖出信号 {sell_count} 只")
 
 
 def _send_error_email(error_msg):
